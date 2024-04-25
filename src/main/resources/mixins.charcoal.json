@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "com.firestartermc.charcoal.mixin",
+  "compatibilityLevel": "JAVA_8",
+  "mixins": [],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "client": [
+    "StartupInjection"
+  ]
+}
