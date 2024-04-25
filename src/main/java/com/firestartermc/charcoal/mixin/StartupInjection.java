@@ -1,6 +1,6 @@
 package com.firestartermc.charcoal.mixin;
 
-import com.firestartermc.charcoal.HttpKt;
+import com.firestartermc.charcoal.UpdaterKt;
 import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -21,6 +21,6 @@ public class StartupInjection {
     @Inject(method = "init()V", at = @At("HEAD"))
     void init(CallbackInfo callback) {
         // Run the auto-update in a blocking manner to prevent the game from starting before the update is complete
-        HttpKt.autoUpdateBlocking(mcDataDir.toPath());
+        UpdaterKt.autoUpdateBlocking(mcDataDir.toPath());
     }
 }

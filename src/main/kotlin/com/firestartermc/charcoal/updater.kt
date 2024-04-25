@@ -57,8 +57,6 @@ private val log = LogManager.getLogger()
 
 @OptIn(ExperimentalPathApi::class)
 suspend fun autoUpdate(directory: Path) {
-    println(directory)
-
     val release = fetchLatestRelease()
                   ?: return
 
@@ -101,7 +99,7 @@ suspend fun autoUpdate(directory: Path) {
     frame.isVisible = true
 
     // stream the tarball
-    val tarball = client.get("https://codeload.github.com/firestarter/bonfire/legacy.tar.gz/refs/tags/2.3-SNAPSHOT")
+    val tarball = client.get(release.tarballUrl)
         .bodyAsChannel()
         .toInputStream()
         .let(::GzipCompressorInputStream)
