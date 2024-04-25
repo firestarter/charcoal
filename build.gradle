@@ -14,12 +14,13 @@ buildscript {
 plugins {
     id 'org.jetbrains.kotlin.jvm' version '1.9.23'
     id 'org.jetbrains.kotlin.plugin.serialization' version '1.9.23'
-    id 'org.jlleitschuh.gradle.ktlint' version '11.5.1'
+//     id 'org.jlleitschuh.gradle.ktlint' version '11.5.1'
     id 'com.github.johnrengelman.shadow' version '6.1.0'
 }
 
 apply plugin: 'net.minecraftforge.gradle'
 apply plugin: 'org.spongepowered.mixin'
+apply plugin: 'com.github.johnrengelman.shadow'
 apply plugin: 'eclipse'
 apply plugin: 'maven-publish'
 
@@ -53,30 +54,48 @@ minecraft {
     }
 }
 
+configurations {
+    shade
+    implementation.extendsFrom shade
+}
+
 dependencies {
     minecraft 'net.minecraftforge:forge:1.12.2-14.23.5.2860'
-    implementation 'org.spongepowered:mixin:0.8.5'
+    compileOnly('org.spongepowered:mixin:0.8.5') {
+        exclude module: 'guava'
+        exclude module: 'commons-io'
+        exclude module: 'gson'
+    }
+
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
 
     // kotlin
-    implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.23'
-    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0'
-    implementation 'org.jetbrains.kotlinx:kotlinx-datetime:0.6.0-RC.2'
+    shade 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.23'
+    shade 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0'
+    shade 'org.jetbrains.kotlinx:kotlinx-datetime:0.6.0-RC.2'
 
     // http
-    implementation 'io.ktor:ktor-client-core:2.3.10'
-    implementation 'io.ktor:ktor-client-cio:2.3.10'
-    implementation 'io.ktor:ktor-client-content-negotiation:2.3.10'
-    implementation 'io.ktor:ktor-serialization-kotlinx-json:2.3.10'
+    shade 'io.ktor:ktor-client-core:2.3.10'
+    shade 'io.ktor:ktor-client-cio:2.3.10'
+    shade 'io.ktor:ktor-client-content-negotiation:2.3.10'
+    shade 'io.ktor:ktor-serialization-kotlinx-json:2.3.10'
 }
 
 mixin {
-    add sourceSets.main, 'mixins.charcoal.refmap.json'
+    add sourceSets.main, 'refmap.charcoal.json'
     config 'mixins.charcoal.json'
+}
+
+shadowJar {
+    archiveClassifier = ''
+    configurations = [project.configurations.shade]
+    finalizedBy 'reobfShadowJar'
 }
 
 // Example for how to get properties into the manifest for reading by the runtime..
 jar {
+    archiveClassifier = 'slim'
+
     manifest {
         attributes([
             "Specification-Title": "charcoal",
@@ -85,14 +104,21 @@ jar {
             "Implementation-Title": project.name,
             "Implementation-Version": "${version}",
             "Implementation-Vendor" :"firestarter",
-            "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+            "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
+            "FMLCorePluginContainsFMLMod": "true",
+            "ForceLoadAsMod": "true",
+            "TweakClass": "org.spongepowered.asm.launch.MixinTweaker",
+            "TweakOrder": "0"
         ])
     }
 }
 
-// Example configuration to allow publishing using the maven-publish task
-// This is the preferred method to reobfuscate your jar file
-jar.finalizedBy('reobfJar') 
+assemble.dependsOn shadowJar
+jar.finalizedBy('reobfJar')
+
+reobf {
+    shadowJar {}
+}
 // However if you are in a multi-project build, dev time needs unobfed jar files, so you can delay the obfuscation until publishing by doing
 //publish.dependsOn('reobfJar')
 

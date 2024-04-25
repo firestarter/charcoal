@@ -2,6 +2,7 @@
   "required": true,
   "package": "com.firestartermc.charcoal.mixin",
   "compatibilityLevel": "JAVA_8",
+  "refmap": "refmap.charcoal.json",
   "mixins": [],
   "injectors": {
     "defaultRequire": 1
