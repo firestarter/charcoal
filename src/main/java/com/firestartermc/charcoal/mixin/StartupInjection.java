@@ -12,15 +12,21 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.io.File;
 
 @Mixin(Minecraft.class)
-public class StartupInjection {
+public abstract class StartupInjection {
 
     @Shadow
     @Final
     public File mcDataDir;
 
-    @Inject(method = "init()V", at = @At("HEAD"))
+    @Shadow
+    public abstract void shutdown();
+
+    @Inject(method = "init()V", at = @At("HEAD"), cancellable = true)
     void init(CallbackInfo callback) {
         // Run the auto-update in a blocking manner to prevent the game from starting before the update is complete
-        UpdaterKt.autoUpdateBlocking(mcDataDir.toPath());
+        if (UpdaterKt.autoUpdateBlocking(mcDataDir.toPath())) {
+            callback.cancel();
+            shutdown();
+        }
     }
 }

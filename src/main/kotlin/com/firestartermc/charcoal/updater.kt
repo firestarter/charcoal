@@ -7,8 +7,8 @@ import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
-import io.ktor.serialization.kotlinx.json.json
-import io.ktor.utils.io.jvm.javaio.toInputStream
+import io.ktor.serialization.kotlinx.json.*
+import io.ktor.utils.io.jvm.javaio.*
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
@@ -18,9 +18,20 @@ import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import org.apache.logging.log4j.LogManager
 import java.awt.Dimension
 import java.awt.FlowLayout
+import java.io.File
+import java.nio.file.Files
 import java.nio.file.Path
-import javax.swing.*
-import kotlin.io.path.*
+import java.nio.file.StandardCopyOption
+import javax.swing.JFrame
+import javax.swing.JOptionPane
+import javax.swing.JTextArea
+import javax.swing.UIManager
+import kotlin.io.path.ExperimentalPathApi
+import kotlin.io.path.createDirectories
+import kotlin.io.path.deleteRecursively
+import kotlin.io.path.listDirectoryEntries
+import kotlin.io.path.moveTo
+import kotlin.io.path.name
 
 @OptIn(ExperimentalSerializationApi::class)
 val client = HttpClient(CIO) {
@@ -42,8 +53,8 @@ val client = HttpClient(CIO) {
 /**
  * Fetches the latest release from the GitHub API.
  */
-suspend fun fetchLatestRelease(): GitHubRelease? = try {
-    val response = client.get("https://api.github.com/repos/firestarter/bonfire/releases/latest") {
+suspend fun fetchLatestRelease(description: PackDescription): GitHubRelease? = try {
+    val response = client.get("https://api.github.com/repos/${description.githubRepo}/releases/latest") {
         header("X-GitHub-Api-Version", "2022-11-28")
     }
 
@@ -56,25 +67,28 @@ suspend fun fetchLatestRelease(): GitHubRelease? = try {
 private val log = LogManager.getLogger()
 
 @OptIn(ExperimentalPathApi::class)
-suspend fun autoUpdate(directory: Path) {
-    val release = fetchLatestRelease()
-                  ?: return
+suspend fun autoUpdate(directory: Path): Boolean {
+    val packDescription = readPackDescription(directory) ?: return false
+    val release = fetchLatestRelease(packDescription) ?: return false
 
-    log.info("Latest release is ${release.tagName}.")
-
-    val response = JOptionPane.showConfirmDialog(
-    null,
-    "Bonfire version ${release.tagName} has been released! Would you like to automatically update your game now to this version?\n\nThis is required to keep playing on our official server!",
-    )
-
-    if (response != 0) {
-        log.info("User declined to update to ${release.tagName}.")
-        return
+    /* check to see if a new update is available */
+    if (packDescription.packVersion == release.tagName) {
+        log.info("we are running the latest available pack version (${release.tagName}).")
+        return false
+    } else {
+        log.warn("we are outdated; pack version ${release.tagName} is available for installation.")
     }
 
-    log.info("User accepted to update to ${release.tagName}.")
+    /* let the user decide whether they would like to update their game */
+    val response = JOptionPane.showConfirmDialog(null, "${packDescription.packName} version ${release.tagName} has been released! Would you like to automatically update your game now to this version?\n\nThis is required to keep playing on our official server!",)
+    if (response != 0) {
+        log.info("user declined the available pack update.")
+        return false
+    }
 
-    val frame = JFrame("Updating Bonfire")
+    log.info("user accepted the available pack update.")
+
+    val frame = JFrame("Updating ${packDescription.packName} to version ${release.tagName}")
     frame.size = Dimension(500, 100)
     frame.layout = FlowLayout()
     frame.setLocationRelativeTo(null)
@@ -94,7 +108,7 @@ suspend fun autoUpdate(directory: Path) {
     }
 
 
-    updateLabel("Downloading ${release.tagName} tarball...")
+    updateLabel("Downloading ${packDescription.packName} ${release.tagName} tarball..")
     frame.add(textArea)
     frame.isVisible = true
 
@@ -105,12 +119,11 @@ suspend fun autoUpdate(directory: Path) {
         .let(::GzipCompressorInputStream)
         .let(::TarArchiveInputStream)
 
-    updateLabel("Extracting tarball...")
+    updateLabel("Extracting tarball..")
 
     var root: Path? = null
     while (true) {
-        val entry = tarball.nextTarEntry
-                    ?: break
+        val entry = tarball.nextTarEntry ?: break
 
         val extract = directory.resolve(entry.name)
         updateLabel("Extracting ${entry.name} to $extract...")
@@ -120,26 +133,42 @@ suspend fun autoUpdate(directory: Path) {
             root = extract
         }
 
-        //
-        if (entry.isDirectory) extract.createDirectories() else extract.createFile()
+        // copy the file into the desired directory
+        if (entry.isDirectory) {
+            extract.createDirectories()
+        } else {
+            Files.copy(tarball, extract, StandardCopyOption.REPLACE_EXISTING)
+        }
     }
 
     requireNotNull(root) { "Root directory not found in tarball." }
-    log.info("Extracted to $root, copying files to $directory.")
+    log.info("extracted to $root, copying files to $directory.")
 
-    for (entry in root.listDirectoryEntries()) entry.copyToRecursively(
-        directory.resolve(entry.name),
-        followLinks = false,
-        overwrite = true,
-    )
+    /* completely remote top-level directories that are included in the update */
+    for (topLevelDirectory in root.toFile().listFiles()!!) {
+        log.info("deleted top-level directory ${topLevelDirectory.name} as it was included in the update file.")
+        File(directory.toFile(), topLevelDirectory.name).deleteRecursively()
+    }
+
+    /* copy in the new update contents */
+    for (entry in root.listDirectoryEntries()) {
+        entry.moveTo(
+            directory.resolve(entry.name),
+            overwrite = true,
+        )
+    }
 
     root.deleteRecursively()
+    JOptionPane.showMessageDialog(null, "${packDescription.packName} has been updated to the latest version. The game will now close and you may relaunch it immediately to continue playing!")
+    return true
 }
 
 fun autoUpdateBlocking(directory: Path) = runBlocking {
     try {
-        autoUpdate(directory)
+       return@runBlocking autoUpdate(directory)
     } catch (ex: Throwable) {
-        log.error("Failed to auto-update.", ex)
+        log.error("failed to auto-update.", ex)
     }
+
+    false
 }
